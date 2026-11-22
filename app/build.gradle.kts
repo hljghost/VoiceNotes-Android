@@ -17,6 +17,7 @@ android {
         versionName = "0.1.0-mvp"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
+            // llama-android ships arm64-v8a only; x86 emulator falls back to heuristic enricher.
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
@@ -84,6 +85,6 @@ dependencies {
     // sherpa-onnx Android AAR via JitPack (SenseVoice offline ASR)
     implementation("com.github.k2-fsa:sherpa-onnx:v1.12.14")
 
-    // MediaPipe / AI Edge GenAI — Gemma on-device when .task present; else heuristic
-    implementation("com.google.mediapipe:tasks-genai:0.10.24")
+    // llama.cpp — Qwen3.5-2B Q4_K_M GGUF on-device (CPU/NEON); no weights → heuristic
+    implementation("dev.ffmpegkit-maintained:llama-android:0.1.1")
 }

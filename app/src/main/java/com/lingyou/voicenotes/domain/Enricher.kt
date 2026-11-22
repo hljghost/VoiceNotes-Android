@@ -2,7 +2,7 @@ package com.lingyou.voicenotes.domain
 
 /**
  * Post-ASR enrichment.
- * MVP: [com.lingyou.voicenotes.infra.llm.OnDeviceEnricher] (MediaPipe Gemma / heuristic).
+ * MVP: [com.lingyou.voicenotes.infra.llm.OnDeviceEnricher] (llama.cpp Qwen3.5-2B / heuristic).
  * Later (non-MVP): a cloud implementation may share this interface — do not wire in MVP.
  */
 data class Enrichment(

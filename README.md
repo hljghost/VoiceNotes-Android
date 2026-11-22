@@ -1,9 +1,10 @@
 # VoiceNotes — Android 语音速记 MVP
 
-对齐 iOS [hljghost/VoiceNotes](https://github.com/hljghost/VoiceNotes)：录音 → **sherpa-onnx SenseVoice** ASR → **端侧整理**（MediaPipe Gemma / 启发式降级）→ Room。
+对齐 iOS [hljghost/VoiceNotes](https://github.com/hljghost/VoiceNotes)：录音 → **sherpa-onnx SenseVoice** ASR → **端侧整理**（llama.cpp · **Qwen3.5-2B Q4_K_M** / 启发式降级）→ Room。
 
 工程：`/Users/xw/Documents/VoiceNotes-Android`  
-包名：`com.lingyou.voicenotes`（Debug：`com.lingyou.voicenotes.debug`）
+包名：`com.lingyou.voicenotes`（Debug：`com.lingyou.voicenotes.debug`）  
+仓：https://github.com/hljghost/VoiceNotes-Android
 
 ## 约束
 
@@ -26,28 +27,16 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 ```bash
 cd /Users/xw/Documents/VoiceNotes-Android
 ./gradlew :app:assembleDebug
-# 产物：
-# app/build/outputs/apk/debug/app-debug.apk
+# 产物：app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## 安装到设备 / 模拟器
+## 安装
 
 ```bash
-adb devices
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-# 或
-./gradlew :app:installDebug
 ```
 
-首次打开：设置页下载 SenseVoice（必选）与 Gemma（可选；未下则启发式整理）。
-
-侧载 SenseVoice（可选）：
-
-```bash
-./scripts/download-sensevoice.sh
-# 再用 adb push 到：
-# /data/data/com.lingyou.voicenotes.debug/files/VoiceNotes/Models/ASR/sensevoice-small/
-```
+首次打开：设置页下载 SenseVoice（必选）与 **Qwen3.5-2B**（可选；未下则启发式整理）。
 
 ## 栈
 
@@ -56,15 +45,26 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | UI | Kotlin + Jetpack Compose |
 | 录音 | MediaRecorder · 16 kHz mono M4A |
 | ASR | sherpa-onnx SenseVoice Small int8（JitPack） |
-| LLM | MediaPipe Tasks GenAI（Gemma `.task`）· 无权重则启发式 |
+| LLM | **llama.cpp**（`dev.ffmpegkit-maintained:llama-android:0.1.1`）· **Qwen3.5-2B Q4_K_M GGUF**（~1.28 GB） |
 | 存储 | Room · 音频在 app files `VoiceNotes/Audio` |
+
+### LLM 模型
+
+| 项 | 值 |
+|----|-----|
+| App modelID | `qwen3.5-2b-q4-k-m` |
+| 文件 | `Qwen3.5-2B-Q4_K_M.gguf` |
+| 体积 | ~1.28 GB（1 280 835 840 B） |
+| ModelScope 主仓 | `unsloth/Qwen3.5-2B-GGUF` |
+| 备仓 | `diodel/Qwen3.5-2B-Q4_K_M-GGUF` |
+| 运行时 | llama.cpp CPU/NEON（arm64-v8a）；x86 模拟器无 native → 启发式 |
 
 ## 降级
 
 | 情况 | 行为 |
 |------|------|
-| 未下 Gemma | 启发式，`llmModelID=…-heuristic` |
-| MediaPipe 初始化失败 | 启发式，`…-mediapipe-fallback-heuristic` |
+| 未下 Qwen | 启发式，`llmModelID=…-heuristic` |
+| llama.cpp 加载/推理失败 | 启发式，`…-llamacpp-fallback-heuristic` |
 | ASR 未就绪 | `failedASR`，保留音频 |
 
 ## 不做（MVP）

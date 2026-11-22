@@ -1,3 +1,3 @@
-# VoiceNotes MVP — keep native JNI entry points for sherpa-onnx
+# VoiceNotes MVP — keep native JNI entry points
 -keep class com.k2fsa.sherpa.onnx.** { *; }
--keep class com.google.mediapipe.** { *; }
+-keep class dev.ffmpegkit.llama.** { *; }
