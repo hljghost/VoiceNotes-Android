@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VoiceNotes</string>
+    <string name="tab_record">录音</string>
+    <string name="tab_notes">笔记</string>
+    <string name="tab_settings">设置</string>
+</resources>
