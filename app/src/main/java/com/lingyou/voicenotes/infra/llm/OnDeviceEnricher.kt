@@ -1,11 +1,13 @@
 package com.lingyou.voicenotes.infra.llm
 
 import android.content.Context
-import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.lingyou.voicenotes.domain.Enricher
 import com.lingyou.voicenotes.domain.EnricherException
 import com.lingyou.voicenotes.domain.Enrichment
-import com.lingyou.voicenotes.infra.modelstore.GemmaModelCatalog
+import com.lingyou.voicenotes.infra.modelstore.QwenModelCatalog
+import dev.ffmpegkit.llama.Llama
+import dev.ffmpegkit.llama.LlamaConfig
+import dev.ffmpegkit.llama.LlamaModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -15,34 +17,35 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * On-device enricher.
- * - No Gemma weights → deterministic heuristic (never hits network).
- * - Weights present → MediaPipe LlmInference; on failure → [EnricherException.GenerationFailed].
- * Cloud LLM intentionally not implemented — keep [Enricher] for a later path.
+ * On-device enricher — **Qwen3.5-2B Q4_K_M** via llama.cpp.
+ *
+ * - No GGUF weights → deterministic heuristic (never hits network), `…-heuristic`
+ * - Weights present → llama.cpp generate JSON; on failure → `…-llamacpp-fallback-heuristic`
+ * - Cloud LLM intentionally not implemented — keep [Enricher] for a later path.
  */
 class OnDeviceEnricher(
-    private val appContext: Context,
+    @Suppress("UNUSED_PARAMETER") private val appContext: Context,
     private val llmRoot: File,
-    override val modelID: String = GemmaModelCatalog.MODEL_ID,
+    override val modelID: String = QwenModelCatalog.MODEL_ID,
     var allowHeuristicFallback: Boolean = true,
 ) : Enricher {
     private val mutex = Mutex()
-    private var llm: LlmInference? = null
+    private var model: LlamaModel? = null
 
     companion object {
         const val HEURISTIC_SUFFIX = "-heuristic"
-        const val FALLBACK_SUFFIX = "-mediapipe-fallback-heuristic"
+        const val FALLBACK_SUFFIX = "-llamacpp-fallback-heuristic"
+        private const val MAX_TOKENS = 256
     }
 
     override suspend fun isModelReady(): Boolean =
-        withContext(Dispatchers.IO) { GemmaModelCatalog.isReady(llmRoot) }
+        withContext(Dispatchers.IO) { QwenModelCatalog.isReady(llmRoot) }
 
     override suspend fun enrich(transcript: String): Enrichment = mutex.withLock {
         val trimmed = transcript.trim()
         if (trimmed.isEmpty()) throw EnricherException.EmptyTranscript
 
-        val ready = GemmaModelCatalog.isReady(llmRoot)
-        if (!ready) {
+        if (!QwenModelCatalog.isReady(llmRoot)) {
             if (allowHeuristicFallback) {
                 return heuristic(trimmed, HEURISTIC_SUFFIX)
             }
@@ -50,15 +53,13 @@ class OnDeviceEnricher(
         }
 
         return try {
-            withContext(Dispatchers.Default) {
-                val text = generateJson(trimmed)
-                parseEnrichment(text, trimmed)
-            }
+            val text = generateJson(trimmed)
+            parseEnrichment(text, trimmed)
         } catch (e: EnricherException) {
             throw e
         } catch (e: Exception) {
             if (allowHeuristicFallback) {
-                // Emulator / missing NPU / MediaPipe init failure → heuristic tagged distinctly
+                // Emulator (no arm64 native) / OOM / arch mismatch → tagged heuristic
                 heuristic(trimmed, FALLBACK_SUFFIX)
             } else {
                 throw EnricherException.GenerationFailed(e.message ?: e.toString())
@@ -67,34 +68,49 @@ class OnDeviceEnricher(
     }
 
     override suspend fun unload() = mutex.withLock {
+        val loaded = model ?: return@withLock
         try {
-            llm?.close()
+            Llama.releaseModel(loaded)
         } catch (_: Exception) {
         }
-        llm = null
+        model = null
     }
 
-    private fun generateJson(transcript: String): String {
-        val engine = loadLlm()
-        val prompt = """
+    private suspend fun generateJson(transcript: String): String {
+        val loaded = loadModel()
+        val system = """
             你是中文语音速记整理助手。只根据用户给出的转写原文整理，不要编造原文没有的事实。
-            只输出一行 JSON 对象，不要 Markdown、不要代码围栏、不要解释。字段：
+            不要思考过程，不要 Markdown，不要代码围栏。只输出一行 JSON 对象，字段：
             {"title":"不超过20字的标题","summary":"一两句摘要","bullets":["要点1","要点2"],"tags":["标签"]}
-            转写原文：
-            $transcript
         """.trimIndent()
-        return engine.generateResponse(prompt).trim()
+        val prompt = "转写原文：\n$transcript"
+        val result = Llama.complete(
+            loaded,
+            prompt = prompt,
+            systemPrompt = system,
+            maxTokens = MAX_TOKENS,
+        )
+        return result.text.trim()
     }
 
-    private fun loadLlm(): LlmInference {
-        llm?.let { return it }
-        val model = GemmaModelCatalog.modelFile(llmRoot)
+    private suspend fun loadModel(): LlamaModel {
+        model?.let { if (it.isLoaded) return it }
+        val file = QwenModelCatalog.modelFile(llmRoot)
             ?: throw EnricherException.ModelNotReady
-        val options = LlmInference.LlmInferenceOptions.builder()
-            .setModelPath(model.absolutePath)
-            .setMaxTokens(512)
-            .build()
-        return LlmInference.createFromOptions(appContext, options).also { llm = it }
+        val loaded = Llama.loadModel(
+            modelPath = file.absolutePath,
+            config = LlamaConfig(
+                contextSize = 2048,
+                threads = 4,
+                gpuLayers = 0,
+                temperature = 0.2f,
+                topP = 0.9f,
+                topK = 40,
+                seed = 42,
+            ),
+        )
+        model = loaded
+        return loaded
     }
 
     private fun parseEnrichment(raw: String, fallback: String): Enrichment {

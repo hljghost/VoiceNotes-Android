@@ -29,7 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.lingyou.voicenotes.app.AppDependencies
 import com.lingyou.voicenotes.features.shared.VNColors
-import com.lingyou.voicenotes.infra.modelstore.GemmaModelCatalog
+import com.lingyou.voicenotes.infra.modelstore.QwenModelCatalog
 import com.lingyou.voicenotes.infra.modelstore.SenseVoiceModelCatalog
 import com.lingyou.voicenotes.infra.modelstore.formatBytes
 import kotlinx.coroutines.launch
@@ -99,7 +99,12 @@ fun SettingsScreen(deps: AppDependencies) {
 
         ModelCard(
             title = "端侧整理 LLM",
-            subtitle = "MediaPipe Gemma · ${GemmaModelCatalog.MODEL_ID}\n源：${GemmaModelCatalog.MIRROR_LABEL}\n未下载时使用启发式整理（与 iOS 降级对齐）",
+            subtitle = buildString {
+                append("Qwen3.5-2B Q4_K_M · ${QwenModelCatalog.MODEL_ID}\n")
+                append("运行时：${QwenModelCatalog.RUNTIME_LABEL}\n")
+                append("源：${QwenModelCatalog.MIRROR_LABEL} · ~1.28 GB\n")
+                append("未下载时使用启发式整理（llmModelID=…-heuristic）")
+            },
             ready = llmReady,
             bytes = llmBytes,
             busy = busy,
@@ -107,8 +112,8 @@ fun SettingsScreen(deps: AppDependencies) {
                 scope.launch {
                     message = null
                     try {
-                        deps.modelStore.downloadGemma()
-                        message = "Gemma 下载完成"
+                        deps.modelStore.downloadQwen()
+                        message = "Qwen3.5-2B 下载完成"
                     } catch (e: Exception) {
                         message = e.message
                     }
@@ -117,8 +122,8 @@ fun SettingsScreen(deps: AppDependencies) {
             },
             onDelete = {
                 scope.launch {
-                    deps.modelStore.deleteGemma()
-                    message = "已删除 Gemma"
+                    deps.modelStore.deleteQwen()
+                    message = "已删除 Qwen3.5-2B"
                     refresh()
                 }
             },
@@ -155,13 +160,18 @@ fun SettingsScreen(deps: AppDependencies) {
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text("整理引擎", fontWeight = FontWeight.SemiBold)
-            Text("本机 MediaPipe Gemma", color = VNColors.ink)
+            Text("本机 Qwen3.5-2B（llama.cpp）", color = VNColors.ink)
         }
+        Text(
+            "MVP 唯一选项；云端 Enricher 接口已预留，未接线。",
+            color = VNColors.mist,
+            style = MaterialTheme.typography.bodySmall,
+        )
 
         Spacer(Modifier.height(8.dp))
         Text("关于", fontWeight = FontWeight.SemiBold)
         Text(
-            "VoiceNotes Android MVP · 对齐 iOS：录音 → SenseVoice → 端侧整理 → Room\n" +
+            "VoiceNotes Android MVP · 录音 → SenseVoice → Qwen3.5-2B 整理 → Room\n" +
                 "包名 com.lingyou.voicenotes · 中文短速记",
             style = MaterialTheme.typography.bodySmall,
             color = VNColors.hush,

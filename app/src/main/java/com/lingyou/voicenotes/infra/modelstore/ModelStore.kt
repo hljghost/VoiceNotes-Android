@@ -29,7 +29,8 @@ class ModelStore(
 ) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.MINUTES)
+        .readTimeout(30, TimeUnit.MINUTES)
+        .writeTimeout(30, TimeUnit.MINUTES)
         .followRedirects(true)
         .build()
 
@@ -43,9 +44,9 @@ class ModelStore(
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
     fun asrReady(): Boolean = SenseVoiceModelCatalog.isReady(asrRoot)
-    fun llmReady(): Boolean = GemmaModelCatalog.isReady(llmRoot)
+    fun llmReady(): Boolean = QwenModelCatalog.isReady(llmRoot)
     fun asrBytes(): Long = SenseVoiceModelCatalog.bytesOnDisk(asrRoot)
-    fun llmBytes(): Long = GemmaModelCatalog.bytesOnDisk(llmRoot)
+    fun llmBytes(): Long = QwenModelCatalog.bytesOnDisk(llmRoot)
 
     suspend fun downloadSenseVoice(force: Boolean = false) = withContext(Dispatchers.IO) {
         if (_busy.value) return@withContext
@@ -73,27 +74,40 @@ class ModelStore(
         }
     }
 
-    suspend fun downloadGemma(force: Boolean = false) = withContext(Dispatchers.IO) {
+    /** Download Qwen3.5-2B Q4_K_M GGUF (~1.28 GB) from ModelScope. */
+    suspend fun downloadQwen(force: Boolean = false) = withContext(Dispatchers.IO) {
         if (_busy.value) return@withContext
         _busy.value = true
         _lastError.value = null
         try {
-            val dir = GemmaModelCatalog.bundleDir(llmRoot).also { it.mkdirs() }
-            for (file in GemmaModelCatalog.files) {
-                val dest = File(dir, file.fileName)
-                if (!force && GemmaModelCatalog.isReady(llmRoot)) continue
-                downloadFirstSuccess(
-                    urls = GemmaModelCatalog.remoteUrls(file.fileName),
-                    dest = dest,
-                    kind = ModelKind.LLM,
-                    expectedSha = file.sha256,
-                    expectedBytes = null,
-                    minBytes = file.expectedBytesMin,
-                )
+            val dir = QwenModelCatalog.bundleDir(llmRoot).also { it.mkdirs() }
+            val dest = File(dir, QwenModelCatalog.MODEL_FILE)
+            if (!force && QwenModelCatalog.isReady(llmRoot)) return@withContext
+
+            var lastError: Exception? = null
+            for (mirror in QwenModelCatalog.mirrors) {
+                try {
+                    downloadFirstSuccess(
+                        urls = QwenModelCatalog.remoteUrls(mirror),
+                        dest = dest,
+                        kind = ModelKind.LLM,
+                        expectedSha = mirror.sha256,
+                        expectedBytes = mirror.expectedBytes,
+                        minBytes = QwenModelCatalog.EXPECTED_BYTES_MIN,
+                    )
+                    return@withContext
+                } catch (e: Exception) {
+                    lastError = e
+                    dest.delete()
+                }
             }
+            throw lastError
+                ?: IllegalStateException(
+                    "Qwen3.5-2B 下载失败。可稍后重试，或侧载 ${QwenModelCatalog.MODEL_FILE} 到 Models/LLM/${QwenModelCatalog.MODEL_ID}/。未下载时使用启发式整理。",
+                )
         } catch (e: Exception) {
             _lastError.value = e.message
-                ?: "Gemma 下载失败。可稍后重试，或侧载 .task 到 Models/LLM/${GemmaModelCatalog.MODEL_ID}/。未下载时使用启发式整理。"
+                ?: "Qwen3.5-2B 下载失败。未下载时使用启发式整理。"
             throw e
         } finally {
             _busy.value = false
@@ -101,13 +115,19 @@ class ModelStore(
         }
     }
 
+    /** @deprecated Use [downloadQwen]. Kept as alias for any leftover call sites. */
+    suspend fun downloadGemma(force: Boolean = false) = downloadQwen(force)
+
     suspend fun deleteSenseVoice() = withContext(Dispatchers.IO) {
         SenseVoiceModelCatalog.bundleDir(asrRoot).deleteRecursively()
     }
 
-    suspend fun deleteGemma() = withContext(Dispatchers.IO) {
-        GemmaModelCatalog.bundleDir(llmRoot).deleteRecursively()
+    suspend fun deleteQwen() = withContext(Dispatchers.IO) {
+        QwenModelCatalog.bundleDir(llmRoot).deleteRecursively()
     }
+
+    /** @deprecated Use [deleteQwen]. */
+    suspend fun deleteGemma() = deleteQwen()
 
     private fun downloadFirstSuccess(
         urls: List<String>,
