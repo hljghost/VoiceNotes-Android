@@ -65,7 +65,7 @@ fun SettingsScreen(deps: AppDependencies) {
     ) {
         Text("设置", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
         Text(
-            "数据仅存本机。ASR / 整理模型按需从 ModelScope（内地）下载。MVP 禁止云端 LLM。",
+            "数据仅存本机。ASR / 整理模型按需从 ModelScope（内地）下载。音频、转写与整理结果默认永不上传。",
             color = VNColors.mist,
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -150,8 +150,13 @@ fun SettingsScreen(deps: AppDependencies) {
         }
 
         Spacer(Modifier.height(8.dp))
-        Text("增强引擎", fontWeight = FontWeight.SemiBold)
-        Text("本机（MVP 唯一选项；云端 Enricher 接口已预留，未接线）", color = VNColors.mist)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("整理引擎", fontWeight = FontWeight.SemiBold)
+            Text("本机 MediaPipe Gemma", color = VNColors.ink)
+        }
 
         Spacer(Modifier.height(8.dp))
         Text("关于", fontWeight = FontWeight.SemiBold)
