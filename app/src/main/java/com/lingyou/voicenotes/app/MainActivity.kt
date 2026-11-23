@@ -26,6 +26,7 @@ import androidx.navigation.compose.rememberNavController
 import com.lingyou.voicenotes.features.notes.NoteDetailScreen
 import com.lingyou.voicenotes.features.notes.NotesListScreen
 import com.lingyou.voicenotes.features.record.RecordScreen
+import com.lingyou.voicenotes.features.settings.ManageModelsScreen
 import com.lingyou.voicenotes.features.settings.SettingsScreen
 import com.lingyou.voicenotes.features.shared.VoiceNotesTheme
 
@@ -116,7 +117,16 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("settings") {
-                            SettingsScreen(deps = deps)
+                            SettingsScreen(
+                                deps = deps,
+                                onOpenManageModels = { nav.navigate("manage_models") },
+                            )
+                        }
+                        composable("manage_models") {
+                            ManageModelsScreen(
+                                deps = deps,
+                                onBack = { nav.popBackStack() },
+                            )
                         }
                     }
                 }
