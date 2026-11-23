@@ -4,6 +4,7 @@ import android.content.Context
 import com.lingyou.voicenotes.domain.Enricher
 import com.lingyou.voicenotes.domain.EnricherException
 import com.lingyou.voicenotes.domain.Enrichment
+import com.lingyou.voicenotes.infra.modelstore.ModelPreferences
 import com.lingyou.voicenotes.infra.modelstore.QwenModelCatalog
 import dev.ffmpegkit.llama.Llama
 import dev.ffmpegkit.llama.LlamaConfig
@@ -20,12 +21,13 @@ import java.io.File
  * On-device enricher — **Qwen3.5-2B Q4_K_M** via llama.cpp.
  *
  * - No GGUF weights → deterministic heuristic (never hits network), `…-heuristic`
- * - Weights present → llama.cpp generate JSON; on failure → `…-llamacpp-fallback-heuristic`
+ * - Weights present + selected as active → llama.cpp generate JSON; on failure → `…-llamacpp-fallback-heuristic`
  * - Cloud LLM intentionally not implemented — keep [Enricher] for a later path.
  */
 class OnDeviceEnricher(
     @Suppress("UNUSED_PARAMETER") private val appContext: Context,
     private val llmRoot: File,
+    private val modelPrefs: ModelPreferences? = null,
     override val modelID: String = QwenModelCatalog.MODEL_ID,
     var allowHeuristicFallback: Boolean = true,
 ) : Enricher {
@@ -38,14 +40,22 @@ class OnDeviceEnricher(
         private const val MAX_TOKENS = 256
     }
 
+    private fun isSelectedActive(): Boolean {
+        val active = modelPrefs?.activeLlmModelId
+        // No prefs (tests) or empty → treat installed Qwen as active (auto-heal path).
+        return active.isNullOrEmpty() || active == QwenModelCatalog.MODEL_ID
+    }
+
     override suspend fun isModelReady(): Boolean =
-        withContext(Dispatchers.IO) { QwenModelCatalog.isReady(llmRoot) }
+        withContext(Dispatchers.IO) {
+            QwenModelCatalog.isReady(llmRoot) && isSelectedActive()
+        }
 
     override suspend fun enrich(transcript: String): Enrichment = mutex.withLock {
         val trimmed = transcript.trim()
         if (trimmed.isEmpty()) throw EnricherException.EmptyTranscript
 
-        if (!QwenModelCatalog.isReady(llmRoot)) {
+        if (!QwenModelCatalog.isReady(llmRoot) || !isSelectedActive()) {
             if (allowHeuristicFallback) {
                 return heuristic(trimmed, HEURISTIC_SUFFIX)
             }
